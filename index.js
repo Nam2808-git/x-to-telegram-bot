@@ -30,7 +30,7 @@ async function sendToTelegram(text, url) {
   const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
   await axios.post(telegramUrl, {
     chat_id: TELEGRAM_CHAT_ID,
-    text: `${text}\n\n🔗 ${url}`,
+    text: `${text}\n ${url}`,
     parse_mode: 'HTML',
     disable_web_page_preview: false
   });
