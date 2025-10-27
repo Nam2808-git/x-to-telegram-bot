@@ -1,10 +1,9 @@
 import axios from 'axios';
-import translate from 'google-translate-api';
 
-const BEARER_TOKEN = 'your_twitter_bearer_token'; // Thay bằng process.env.TWITTER_BEARER_TOKEN
-const TELEGRAM_TOKEN = 'your_telegram_bot_token';  // Thay bằng process.env.TELEGRAM_BOT_TOKEN
-const TELEGRAM_CHAT_ID = 'your_telegram_chat_id'; // Thay bằng process.env.TELEGRAM_CHAT_ID
-const TWITTER_USERNAME = 'BinanceWallet';              // Thay bằng process.env.TWITTER_USERNAME
+const BEARER_TOKEN = 'your_twitter_bearer_token'; // Thay bằng Secrets
+const TELEGRAM_TOKEN = 'your_telegram_bot_token';
+const TELEGRAM_CHAT_ID = 'your_telegram_chat_id';
+const TWITTER_USERNAME = 'elonmusk';
 
 let lastTweetId = '0';
 
@@ -37,36 +36,22 @@ async function sendToTelegram(text, url) {
   });
 }
 
-async function translateText(text) {
-  try {
-    const res = await translate(text, { from: 'en', to: 'vi' });
-    return res.text;
-  } catch (error) {
-    console.error('Error translating text:', error);
-    return text; // Trả về text gốc nếu dịch thất bại
-  }
-}
-
 async function checkNewTweets() {
   const tweets = await getLatestTweets();
+  const newTweets = tweets.filter(t => t.id > lastTweetId);
+
+  for (const tweet of newTweets.reverse()) {
+    const text = tweet.text.length > 200 ? tweet.text.substring(0, 200) + '...' : tweet.text;
+    const url = `https://x.com/${TWITTER_USERNAME}/status/${tweet.id}`;
+    await sendToTelegram(text.replace(/&/g, '&amp;'), url);
+    console.log(`Sent tweet: ${url}`);
+  }
+
   if (tweets.length > 0) {
-    const latestTweet = tweets.reduce((newest, current) => 
-      BigInt(newest.id) > BigInt(current.id) ? newest : current
-    );
-    
-    if (BigInt(latestTweet.id) > BigInt(lastTweetId)) {
-      const originalText = latestTweet.text.length > 200 
-        ? latestTweet.text.substring(0, 200) + '...' 
-        : latestTweet.text;
-      const translatedText = await translateText(originalText);
-      const url = `https://x.com/${TWITTER_USERNAME}/status/${latestTweet.id}`;
-      await sendToTelegram(translatedText, url);
-      console.log(`Sent translated tweet: ${url}`);
-      lastTweetId = latestTweet.id;
-    }
+    lastTweetId = tweets[0].id;
   }
 }
 
 // Kiểm tra mỗi 10 giây
 setInterval(checkNewTweets, 10000);
-checkNewTweets(); 
+checkNewTweets(); // Chạy ngay lần đầu
