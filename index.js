@@ -4,7 +4,7 @@ import translate from 'google-translate-api';
 const BEARER_TOKEN = process.env.TWITTER_BEARER_TOKEN || 'your_twitter_bearer_token';
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN || 'your_telegram_bot_token';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || 'your_telegram_chat_id';
-export TWITTER_USERNAME="BinanceWallet"
+const TWITTER_USERNAME="BinanceWallet"
 
 let lastTweetId = '0';
 
