@@ -1,9 +1,10 @@
 import axios from 'axios';
+import translate from 'google-translate-api';
 
-const BEARER_TOKEN = 'your_twitter_bearer_token'; // Thay bằng Secrets
-const TELEGRAM_TOKEN = 'your_telegram_bot_token';
-const TELEGRAM_CHAT_ID = 'your_telegram_chat_id';
-const TWITTER_USERNAME = 'elonmusk';
+const BEARER_TOKEN = process.env.TWITTER_BEARER_TOKEN || 'your_twitter_bearer_token';
+const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN || 'your_telegram_bot_token';
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || 'your_telegram_chat_id';
+const TWITTER_USERNAME = process.env.TWITTER_USERNAME || 'elonmusk';
 
 let lastTweetId = '0';
 
@@ -21,34 +22,56 @@ async function getLatestTweets() {
     });
     return tweetsRes.data.data || [];
   } catch (error) {
-    console.error('Error fetching tweets:', error);
+    console.error('Error fetching tweets:', error.message);
     return [];
   }
 }
 
 async function sendToTelegram(text, url) {
-  const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
-  await axios.post(telegramUrl, {
-    chat_id: TELEGRAM_CHAT_ID,
-    text: `${text}\n\ ${url}`,
-    parse_mode: 'HTML',
-    disable_web_page_preview: false
-  });
+  try {
+    const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
+    await axios.post(telegramUrl, {
+      chat_id: TELEGRAM_CHAT_ID,
+      text: `${text}\n\ ${url}`,
+      parse_mode: 'HTML',
+      disable_web_page_preview: false
+    });
+  } catch (error) {
+    console.error('Error sending to Telegram:', error.message);
+  }
+}
+
+async function translateText(text) {
+  try {
+    const res = await translate(text, { from: 'en', to: 'vi' });
+    return res.text;
+  } catch (error) {
+    console.error('Error translating text:', error.message);
+    return text; // Trả về text gốc nếu dịch thất bại
+  }
 }
 
 async function checkNewTweets() {
   const tweets = await getLatestTweets();
-  const newTweets = tweets.filter(t => t.id > lastTweetId);
-
-  for (const tweet of newTweets.reverse()) {
-    const text = tweet.text.length > 200 ? tweet.text.substring(0, 200) + '...' : tweet.text;
-    const url = `https://x.com/${TWITTER_USERNAME}/status/${tweet.id}`;
-    await sendToTelegram(text.replace(/&/g, '&amp;'), url);
-    console.log(`Sent tweet: ${url}`);
-  }
-
   if (tweets.length > 0) {
-    lastTweetId = tweets[0].id;
+    const latestTweet = tweets.reduce((newest, current) => 
+      BigInt(newest.id) > BigInt(current.id) ? newest : current
+    );
+    
+    if (BigInt(latestTweet.id) > BigInt(lastTweetId)) {
+      const originalText = latestTweet.text.length > 200 
+        ? latestTweet.text.substring(0, 200) + '...' 
+        : latestTweet.text;
+      
+      // Kiểm tra nếu chứa "Binance Alpha" 
+      if (originalText.toLowerCase().includes('binance alpha')) {
+        const translatedText = await translateText(originalText);
+        const url = `https://x.com/${TWITTER_USERNAME}/status/${latestTweet.id}`;
+        await sendToTelegram(translatedText, url);
+        console.log(`Sent translated tweet: ${url}`);
+        lastTweetId = latestTweet.id;
+      }
+    }
   }
 }
 
