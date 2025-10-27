@@ -4,7 +4,7 @@ import translate from 'google-translate-api';
 const BEARER_TOKEN = process.env.TWITTER_BEARER_TOKEN || 'your_twitter_bearer_token';
 const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN || 'your_telegram_bot_token';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || 'your_telegram_chat_id';
-const TWITTER_USERNAME = process.env.TWITTER_USERNAME || 'Binance Alpha';
+export TWITTER_USERNAME="BinanceWallet"
 
 let lastTweetId = '0';
 
@@ -59,23 +59,21 @@ async function translateText(text) {
 async function checkNewTweets() {
   const tweets = await getLatestTweets();
   if (tweets.length > 0) {
-    const latestTweet = tweets.reduce((newest, current) => 
-      BigInt(newest.id) > BigInt(current.id) ? newest : current
-    );
-    
-    if (BigInt(latestTweet.id) > BigInt(lastTweetId)) {
-      const originalText = latestTweet.text.length > 200 
-        ? latestTweet.text.substring(0, 200) + '...' 
-        : latestTweet.text;
-      
-      // Kiểm tra nếu chứa "Binance Alpha" (không phân biệt hoa thường)
-      if (originalText.toLowerCase().includes('binance alpha')) {
-        const translatedText = await translateText(originalText);
-        const url = `https://x.com/${TWITTER_USERNAME}/status/${latestTweet.id}`;
-        await sendToTelegram(translatedText, url);
-        console.log(`Sent translated tweet: ${url}`);
-        lastTweetId = latestTweet.id;
+    const newTweets = tweets.filter(tweet => BigInt(tweet.id) > BigInt(lastTweetId));
+    if (newTweets.length > 0) {
+      // Sort desc by ID
+      newTweets.sort((a, b) => BigInt(b.id) - BigInt(a.id));
+      for (const tweet of newTweets) {
+        const originalText = tweet.text.length > 200 ? tweet.text.substring(0, 200) + '...' : tweet.text;
+        if (originalText.toLowerCase().includes('binance alpha')) {
+          const translatedText = await translateText(originalText);
+          const url = `https://x.com/${TWITTER_USERNAME}/status/${tweet.id}`;
+          await sendToTelegram(translatedText, url);
+          console.log(`Sent translated tweet: ${url}`);
+        }
       }
+      // Update to the latest ID overall
+      lastTweetId = newTweets[0].id; // newest is first after sort
     }
   }
 }
