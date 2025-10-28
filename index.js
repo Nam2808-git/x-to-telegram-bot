@@ -6,7 +6,7 @@ const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const TWITTER_USERNAME = process.env.TWITTER_USERNAME;
 
-// File lưu ID tweet cuối cùng đã gửi
+// Lưu ID bài đã gửi (để tránh gửi lại)
 const LAST_ID_FILE = 'last-tweet-id.txt';
 
 async function getLastTweetId() {
@@ -45,6 +45,20 @@ async function updateLastTweetId(id) {
   }
 }
 
+// Dịch sang tiếng Việt (Google Translate miễn phí)
+async function translateToVietnamese(text) {
+  try {
+    const response = await axios.get(
+      `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=vi&dt=t&q=${encodeURIComponent(text)}`
+    );
+    return response.data[0][0][0];
+  } catch (error) {
+    console.error('Lỗi dịch:', error.message);
+    return text;
+  }
+}
+
+// Lấy bài viết mới nhất
 async function getLatestTweets() {
   const url = `https://api.twitter.com/2/users/by/username/${TWITTER_USERNAME}`;
   const userRes = await axios.get(url, {
@@ -52,42 +66,59 @@ async function getLatestTweets() {
   });
   const userId = userRes.data.data.id;
 
-  const tweetsUrl = `https://api.twitter.com/2/users/${userId}/tweets?max_results=5&tweet.fields=created_at`;
+  const tweetsUrl = `https://api.twitter.com/2/users/${userId}/tweets?max_results=10&tweet.fields=created_at`;
   const tweetsRes = await axios.get(tweetsUrl, {
     headers: { Authorization: `Bearer ${BEARER_TOKEN}` }
   });
   return tweetsRes.data.data || [];
 }
 
-async function sendToTelegram(text, url) {
+async function sendToTelegram(message) {
   const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
   await axios.post(telegramUrl, {
     chat_id: TELEGRAM_CHAT_ID,
-    text: `${text}\n\n🔗 ${url}`,
+    text: message,
     parse_mode: 'HTML',
-    disable_web_page_preview: false
+    disable_web_page_preview: true
   });
 }
 
 async function main() {
-  const lastId = await getLastTweetId();
-  const tweets = await getLatestTweets();
+  try {
+    const lastId = await getLastTweetId();
+    const tweets = await getLatestTweets();
 
-  const newTweets = lastId
-    ? tweets.filter(t => t.id > lastId)
-    : [tweets[0]].filter(Boolean);
+    // Lọc bài mới + bắt đầu bằng "Binance Alpha"
+    const targetTweets = tweets.filter(t => 
+      (!lastId || t.id > lastId) && 
+      t.text.trim().startsWith('Binance Alpha')
+    );
 
-  for (const tweet of newTweets.reverse()) {
-    const text = tweet.text.length > 200
-      ? tweet.text.substring(0, 200) + '...'
-      : tweet.text;
-    const url = `https://x.com/${TWITTER_USERNAME}/status/${tweet.id}`;
-    await sendToTelegram(text.replace(/&/g, '&amp;'), url);
-  }
+    if (targetTweets.length === 0) {
+      console.log('Không có bài mới nào bắt đầu bằng "Binance Alpha".');
+      return;
+    }
 
-  if (tweets.length > 0) {
-    await updateLastTweetId(tweets[0].id);
+    // Lấy bài đầu tiên (mới nhất)
+    const tweet = targetTweets[0];
+    const originalText = tweet.text;
+    const translatedText = await translateToVietnamese(originalText);
+    const tweetUrl = `https://x.com/${TWITTER_USERNAME}/status/${tweet.id}`;
+
+    const message = `
+<b>Binance Alpha Alert</b>
+
+${translatedText}
+
+ <a href="${tweetUrl}">Xem trên X</a>
+    `.trim();
+
+    await sendToTelegram(message);
+    await updateLastTweetId(tweet.id); // Cập nhật ID đã gửi
+    console.log('Đã gửi bài Binance Alpha mới nhất!');
+  } catch (error) {
+    console.error('Lỗi:', error.response?.data || error.message);
   }
 }
 
-main().catch(console.error);
+main();
