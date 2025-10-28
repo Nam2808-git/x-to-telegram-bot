@@ -2,8 +2,8 @@ name: X to Telegram Bot
 
 on:
   schedule:
-    - cron: '*/1 * * * *'  
-  workflow_dispatch:     
+    - cron: '*/10 * * * *'  # Chạy mỗi 10 phút
+  workflow_dispatch:       # Cho phép chạy thủ công
 
 jobs:
   run-bot:
