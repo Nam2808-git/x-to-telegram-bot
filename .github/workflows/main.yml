@@ -2,8 +2,8 @@ name: X to Telegram Bot
 
 on:
   schedule:
-    - cron: '*/10 * * * *'  # Chạy mỗi 10 phút
-  workflow_dispatch:       # Cho phép chạy thủ công
+    - cron: '*/10 * * * *'  # Mỗi 10 phút
+  workflow_dispatch:
 
 jobs:
   run-bot:
@@ -25,5 +25,4 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           TWITTER_USERNAME: ${{ secrets.TWITTER_USERNAME }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node index.js
