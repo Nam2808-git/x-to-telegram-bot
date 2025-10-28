@@ -1,82 +1,93 @@
 import axios from 'axios';
-import translate from 'google-translate-api';
 
-const BEARER_TOKEN = process.env.TWITTER_BEARER_TOKEN || 'your_twitter_bearer_token';
-const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN || 'your_telegram_bot_token';
-const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || 'your_telegram_chat_id';
-const TWITTER_USERNAME="BinanceWallet"
+// Lấy từ GitHub Secrets
+const BEARER_TOKEN = process.env.TWITTER_BEARER_TOKEN;
+const TELEGRAM_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+const TWITTER_USERNAME = process.env.TWITTER_USERNAME;
 
-let lastTweetId = '0';
+// File lưu ID tweet cuối cùng đã gửi
+const LAST_ID_FILE = 'last-tweet-id.txt';
+
+async function getLastTweetId() {
+  try {
+    const res = await axios.get(`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/contents/${LAST_ID_FILE}`, {
+      headers: { Authorization: `token ${process.env.GITHUB_TOKEN}` }
+    });
+    return atob(res.data.content).trim();
+  } catch (e) {
+    return null;
+  }
+}
+
+async function updateLastTweetId(id) {
+  const content = btoa(id);
+  try {
+    const res = await axios.get(`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/contents/${LAST_ID_FILE}`, {
+      headers: { Authorization: `token ${process.env.GITHUB_TOKEN}` }
+    });
+    await axios.put(`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/contents/${LAST_ID_FILE}`, {
+      message: 'Update last tweet ID',
+      content: content,
+      sha: res.data.sha,
+      branch: 'main'
+    }, {
+      headers: { Authorization: `token ${process.env.GITHUB_TOKEN}` }
+    });
+  } catch (e) {
+    await axios.put(`https://api.github.com/repos/${process.env.GITHUB_REPOSITORY}/contents/${LAST_ID_FILE}`, {
+      message: 'Create last tweet ID',
+      content: content,
+      branch: 'main'
+    }, {
+      headers: { Authorization: `token ${process.env.GITHUB_TOKEN}` }
+    });
+  }
+}
 
 async function getLatestTweets() {
-  try {
-    const url = `https://api.twitter.com/2/users/by/username/${TWITTER_USERNAME}`;
-    const userRes = await axios.get(url, {
-      headers: { Authorization: `Bearer ${BEARER_TOKEN}` }
-    });
-    const userId = userRes.data.data.id;
+  const url = `https://api.twitter.com/2/users/by/username/${TWITTER_USERNAME}`;
+  const userRes = await axios.get(url, {
+    headers: { Authorization: `Bearer ${BEARER_TOKEN}` }
+  });
+  const userId = userRes.data.data.id;
 
-    const tweetsUrl = `https://api.twitter.com/2/users/${userId}/tweets?max_results=5&tweet.fields=created_at`;
-    const tweetsRes = await axios.get(tweetsUrl, {
-      headers: { Authorization: `Bearer ${BEARER_TOKEN}` }
-    });
-    return tweetsRes.data.data || [];
-  } catch (error) {
-    if (error.response && error.response.status === 429) {
-      console.error('Rate limit exceeded. Waiting 15 minutes before retrying...');
-      await new Promise(resolve => setTimeout(resolve, 15 * 60 * 1000)); // Chờ 15 phút
-      return getLatestTweets(); // Thử lại
-    }
-    console.error('Error fetching tweets:', error.message);
-    return [];
-  }
+  const tweetsUrl = `https://api.twitter.com/2/users/${userId}/tweets?max_results=5&tweet.fields=created_at`;
+  const tweetsRes = await axios.get(tweetsUrl, {
+    headers: { Authorization: `Bearer ${BEARER_TOKEN}` }
+  });
+  return tweetsRes.data.data || [];
 }
 
 async function sendToTelegram(text, url) {
-  try {
-    const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
-    await axios.post(telegramUrl, {
-      chat_id: TELEGRAM_CHAT_ID,
-      text: `${text}\n\ ${url}`,
-      parse_mode: 'HTML',
-      disable_web_page_preview: false
-    });
-  } catch (error) {
-    console.error('Error sending to Telegram:', error.message);
-  }
+  const telegramUrl = `https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`;
+  await axios.post(telegramUrl, {
+    chat_id: TELEGRAM_CHAT_ID,
+    text: `${text}\n\n🔗 ${url}`,
+    parse_mode: 'HTML',
+    disable_web_page_preview: false
+  });
 }
 
-async function translateText(text) {
-  try {
-    const res = await translate(text, { from: 'en', to: 'vi' });
-    return res.text;
-  } catch (error) {
-    console.error('Error translating text:', error.message);
-    return text; // Trả về text gốc nếu dịch thất bại
-  }
-}
-
-async function checkNewTweets() {
+async function main() {
+  const lastId = await getLastTweetId();
   const tweets = await getLatestTweets();
+
+  const newTweets = lastId
+    ? tweets.filter(t => t.id > lastId)
+    : [tweets[0]].filter(Boolean);
+
+  for (const tweet of newTweets.reverse()) {
+    const text = tweet.text.length > 200
+      ? tweet.text.substring(0, 200) + '...'
+      : tweet.text;
+    const url = `https://x.com/${TWITTER_USERNAME}/status/${tweet.id}`;
+    await sendToTelegram(text.replace(/&/g, '&amp;'), url);
+  }
+
   if (tweets.length > 0) {
-    const newTweets = tweets.filter(tweet => BigInt(tweet.id) > BigInt(lastTweetId));
-    if (newTweets.length > 0) {
-      // Sort desc by ID
-      newTweets.sort((a, b) => BigInt(b.id) - BigInt(a.id));
-      for (const tweet of newTweets) {
-        const originalText = tweet.text.length > 200 ? tweet.text.substring(0, 200) + '...' : tweet.text;
-        if (originalText.toLowerCase().includes('binance alpha')) {
-          const translatedText = await translateText(originalText);
-          const url = `https://x.com/${TWITTER_USERNAME}/status/${tweet.id}`;
-          await sendToTelegram(translatedText, url);
-          console.log(`Sent translated tweet: ${url}`);
-        }
-      }
-      // Update to the latest ID overall
-      lastTweetId = newTweets[0].id; // newest is first after sort
-    }
+    await updateLastTweetId(tweets[0].id);
   }
 }
 
-setInterval(checkNewTweets, 60000); // 60 giây
-checkNewTweets(); // Chạy ngay lần đầu
+main().catch(console.error);
